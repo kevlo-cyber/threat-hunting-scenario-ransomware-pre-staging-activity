@@ -1,15 +1,26 @@
 <#
 Invoke-AttackerPrep-Reset.ps1
-Restores 10 STIG controls to compliance after the attacker-prep simulation.
-Controls: WN10-CC-000327, WN10-CC-000326, WN10-SO-000245, WN10-SO-000250,
-          WN10-AU-000050, WN10-SO-000100, WN10-SO-000120,
-          WN10-CC-000360, WN10-CC-000335, WN10-SO-000230
-Runs silently from an elevated PowerShell session and forces an immediate reboot.
+Restores 10 Windows 10 STIG controls to compliance after the attacker-prep simulation.
+Controls: WN10-CC-000327  (PowerShell Transcription)
+          WN10-CC-000326  (PowerShell Script-Block Logging)
+          WN10-SO-000245  (Admin Approval Mode for built-in Administrator)
+          WN10-SO-000250  (Secure-desktop elevation prompt)
+          WN10-AU-000050  (Audit Process Creation successes)
+          WN10-SO-000100  (SMB client signing)
+          WN10-SO-000120  (SMB server signing)
+          WN10-CC-000360  (WinRM Digest authentication)
+          WN10-CC-000335  (Unencrypted WinRM traffic)
+          WN10-SO-000230  (FIPS mode)
+Runs silently and reboots immediately when finished.
 #>
 
-if (-not ([Security.Principal.WindowsPrincipal]
-          [Security.Principal.WindowsIdentity]::GetCurrent()
-         ).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) { exit 1 }
+# ── Require elevation ────────────────────────────────────────────────────────────
+if (-not ([Security.Principal.WindowsPrincipal]::new(
+            [Security.Principal.WindowsIdentity]::GetCurrent()
+         ).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator))) {
+    Write-Warning 'This script must be run from an elevated PowerShell session.'
+    exit 1
+}
 
 $ErrorActionPreference = 'SilentlyContinue'
 $ProgressPreference    = 'SilentlyContinue'
@@ -64,5 +75,5 @@ EP 'HKLM:\System\CurrentControlSet\Control\Lsa\FipsAlgorithmPolicy'
 Set-ItemProperty 'HKLM:\System\CurrentControlSet\Control\Lsa\FipsAlgorithmPolicy' `
                  -Name Enabled -Type DWord -Value 1 -Force
 
-# Reboot immediately to apply UAC, auditing, SMB, WinRM, FIPS, and PowerShell-logging changes
-shutdown.exe /r /t 0 /c "STIG compliance reset (10 controls) - rebooting"
+# ── Reboot to finalize compliance ───────────────────────────────────────────────
+shutdown.exe /r /t 0 /c "STIG compliance reset (10 controls) – rebooting"
