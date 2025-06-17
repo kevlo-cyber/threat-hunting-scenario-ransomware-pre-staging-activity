@@ -42,16 +42,11 @@ Simple sweep for any key containing the PowerShell, WinRM, SMB, FIPS, or UAC pat
 ```kql
 DeviceRegistryEvents
 | where Timestamp > ago(24h)
-| where RegistryKey has_any (
-        @"\PowerShell\Transcription",
-        @"\PowerShell\ScriptBlockLogging",
-        @"\Policies\System",
-        @"\LanmanWorkstation",
-        @"\LanmanServer",
-        @"\WinRM\Client", @"\WinRM\Service",
-        @"\FipsAlgorithmPolicy")
-| project Timestamp, DeviceName, RegistryKey, RegistryValueName, RegistryValueData
-| order by Timestamp desc
+| where ActionType == "RegistryValueSet"  
+| where RegistryKey has_any ([...])
+| project Timestamp, DeviceName, RegistryKey, RegistryValueName, 
+         RegistryValueData, InitiatingProcessAccountName,  
+         InitiatingProcessFileName  
 ```
 Findings: All ten non-compliant values appeared between 2025-06-17 18:03–18:05 UTC.
 
@@ -84,7 +79,8 @@ Hunted for unsigned SMB and WinRM HTTP (5985).
 ```kql
 DeviceNetworkEvents
 | where Timestamp > datetime(2025-06-17T18:05Z)
-| where (RemotePort == 5985) or (Protocol == "SMB" and SmbIsSigned == false)
+| where (RemotePort == 5985 and Protocol == "Tcp")  
+   or (LocalPort == 445 and Protocol == "Tcp" and AdditionalFields contains "SmbIsSigned")
 | project Timestamp, RemoteIP, RemotePort, InitiatingProcessFileName
 ```
 
