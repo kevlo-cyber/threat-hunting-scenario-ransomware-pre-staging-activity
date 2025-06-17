@@ -135,7 +135,16 @@ Query D - Validate all 10 controls modified
 DeviceRegistryEvents
 | where Timestamp > ago(24h)
 | where ActionType == "RegistryValueSet"
-| where RegistryKey has_any ([list all 10 paths])
+| where RegistryKey has_any (
+    @"SOFTWARE\Policies\Microsoft\Windows\PowerShell\Transcription",
+    @"SOFTWARE\Policies\Microsoft\Windows\PowerShell\ScriptBlockLogging",
+    @"SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System",
+    @"SYSTEM\CurrentControlSet\Services\Lanmanworkstation\Parameters",
+    @"SYSTEM\CurrentControlSet\Services\LanmanServer\Parameters",
+    @"SOFTWARE\Policies\Microsoft\Windows\WinRM\Client",
+    @"SOFTWARE\Policies\Microsoft\Windows\WinRM\Service",
+    @"SYSTEM\CurrentControlSet\Control\Lsa\FipsAlgorithmPolicy"
+)
 | summarize ModifiedCount = dcount(RegistryKey) by DeviceName, InitiatingProcessAccountName
 | where ModifiedCount == 10
 ```
