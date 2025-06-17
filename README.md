@@ -115,9 +115,9 @@ Findings: Confirmed all 10 STIG controls were modified by single account (corp\b
 
 | IOC (Type) | Value | Confidence | MITRE ATT&CK
 |-------|-----------|-------|-----------|
-| Compromised Account | powershell.exe (hidden) downloaded and executed stig-pre-staging-iocs.ps1. | High | T1078
-| Malicious Process | All ten registry values flipped to non-compliant (DeviceRegistryEvents). | High | T1059.001
-| C2 Server | First WinRM HTTP connection to 10.0.0.15:5985 by powershell.exe. | Medium | T1021.006
+| Compromised Account | corp\backupsvc | High | T1078
+| Malicious Process | powershell.exe -ep Bypass -NoProfile | High | T1059.001
+| C2 Server | 10.0.0.15:5985 (WinRM) | Medium | T1021.006
 | Malicious Script | stig-pre-staging-iocs.ps1 | High | T1203
 | Registry Modifications | 10 STIG controls disabled | High | T1112
 
