@@ -68,64 +68,88 @@ Your goal: use **Defender for Endpoint Advanced Hunting (KQL)** to prove all ten
 
 ## 4. Related Queries
 
+> **Tip:** Run them one by one in **Microsoft 365 Defender ▸ Advanced Hunting**.  
+> Adjust the `ago(24h)` time window if needed.
+
+---
+
+Query A – Registry changes for any of the ten STIG keys
+
 ```kusto
-// A. Confirm ALL 10 STIG flips on the device
-let bad =
-datatable(KeyValue:string, BadData:string)
-[
-  @"\PowerShell\Transcription|EnableTranscripting",            "0",
-  @"\PowerShell\ScriptBlockLogging|EnableScriptBlockLogging",  "0",
-  @"\Policies\System|FilterAdministratorToken",                "0",
-  @"\Policies\System|ConsentPromptBehaviorAdmin",              "0",
-  @"\System\Audit|ProcessCreationIncludeCmdLine_Enabled",      "0",
-  @"\LanmanWorkstation|RequireSecuritySignature",              "0",
-  @"\LanmanServer|RequireSecuritySignature",                   "0",
-  @"\WinRM\Client|AllowDigest",                                "1",
-  @"\WinRM\Client|AllowUnencryptedTraffic",                    "1",
-  @"\WinRM\Service|AllowUnencryptedTraffic",                   "1",
-  @"\Lsa\FipsAlgorithmPolicy|Enabled",                         "0"
-];
 DeviceRegistryEvents
 | where Timestamp > ago(24h)
-| extend KV = strcat(RegistryKey,"|",RegistryValueName)
-| join kind=inner bad on $left.KV==$right.KeyValue
-| where RegistryValueData == BadData
-| summarize flips = make_set(KV) by DeviceName, InitiatingProcessAccountUpn, earliest=min(Timestamp)
-| where array_length(flips) == 10      // ⇐ all ten present
-| project earliest, DeviceName, InitiatingProcessAccountUpn, flips
-
-// B. Processes / accounts that made the changes
-DeviceProcessEvents
-| where Timestamp > ago(24h)
-| where ProcessCommandLine has_any ("reg add","Set-ItemProperty","auditpol")
-| project Timestamp, DeviceName, InitiatingProcessAccountUpn,
-         FileName, ProcessCommandLine
+| where RegistryKey has_any (
+        @"\PowerShell\Transcription",
+        @"\PowerShell\ScriptBlockLogging",
+        @"\Policies\System",
+        @"\System\Audit",
+        @"\LanmanWorkstation",
+        @"\LanmanServer",
+        @"\WinRM\Client",
+        @"\WinRM\Service",
+        @"\FipsAlgorithmPolicy"
+)
+| project Timestamp, DeviceName, RegistryKey,
+         RegistryValueName, RegistryValueData,
+         InitiatingProcessFileName, InitiatingProcessAccountUpn
 | order by Timestamp desc
 
-// C. Supporting network indicators (WinRM HTTP & unsigned SMB)
-DeviceNetworkEvents
-| where Timestamp > ago(24h)
-| where (RemotePort == 5985 and Protocol == "TCP")          // WinRM over HTTP
-   or (Protocol == "SMB" and SmbIsSigned == false)          // Unsigned SMB
-| project Timestamp, DeviceName, RemoteIP, RemotePort, Protocol, ActionType
+What to look for:
+EnableTranscripting = 0, EnableScriptBlockLogging = 0, FilterAdministratorToken = 0, etc.
 ```
 
+Query B – Processes that likely made the changes
 
-5. Created By
-Kevin Lopez
+```kusto
+DeviceProcessEvents
+| where Timestamp > ago(24h)
+| where ProcessCommandLine has_any ("reg add", "Set-ItemProperty", "auditpol")
+| project Timestamp, DeviceName,
+         InitiatingProcessAccountUpn, FileName, ProcessCommandLine
+| order by Timestamp desc
 
-6. Validated By
-(leave blank for now)
+What to look for:
+reg add HKLM\...\EnableTranscripting 0,
+powershell Set-ItemProperty -Path ...,
+auditpol /set /subcategory:"Process Creation" /success:disable.
+```
 
-7. Additional Notes
-Learners must confirm all ten flips before declaring an incident.
+Query C – Suspicious network after the flips (WinRM HTTP & unsigned SMB)
 
-Encryption phase is hypothetical and will not run in the lab.
+```kusto
+DeviceNetworkEvents
+| where Timestamp > ago(24h)
+| where (RemotePort == 5985 and Protocol == "TCP")      // WinRM over HTTP
+   or (Protocol == "SMB" and SmbIsSigned == false)      // Unsigned SMB traffic
+| project Timestamp, DeviceName, RemoteIP, RemotePort,
+         InitiatingProcessFileName
+| order by Timestamp desc
 
-A single Windows 10 VM is used; no domain controller or mail telemetry available.
+What to look for:
+WinRM traffic (RemotePort 5985) and SMB sessions with SmbIsSigned = false that begin after the registry flips.
+```
+---
 
-8. Revision History
-Date	Version	Notes
-2025-06-17	1.0	Initial scenario (Crimson Mongoose STIG flips).
+## Created By:
+- **Author Name**: Kevin Lopez
+- **Author Contact**: https://www.linkedin.com/in/kevlo-cyber/
+- **Date**: June 17, 2025
+
+## Validated By:
+- **Reviewer Name**: 
+- **Reviewer Contact**: 
+- **Validation Date**: 
+
+---
+
+## Additional Notes:
+- **None**
+
+---
+
+## Revision History:
+| **Version** | **Changes**                   | **Date**         | **Modified By**   |
+|-------------|-------------------------------|------------------|-------------------|
+| 1.0         | Initial draft                  | `June  17, 2025`  | `Kevin Lopez`   
 
 
