@@ -42,25 +42,25 @@ Your goal: use **Defender for Endpoint Advanced Hunting (KQL)** to prove all ten
 | **Parameter** | **Description** |
 |-----------|-------------|
 | **Name** | DeviceRegistryEvents |
-| **Info** |https://learn.microsoft.com/en-us/microsoft-365/security/defender/advanced-hunting-deviceregistryevents-table|
+| **Info** | https://learn.microsoft.com/en-us/microsoft-365/security/defender/advanced-hunting-deviceregistryevents-table |
 | **Purpose** | Detects every registry-value change (all ten STIG flips appear here). |
 
 | **Parameter** | **Description** |
 |-----------|-------------|
 | **Name** | DeviceProcessEvents |
-| **Info** |https://learn.microsoft.com/en-us/microsoft-365/security/defender/advanced-hunting-device-processevents-table>|
+| **Info** | https://learn.microsoft.com/en-us/microsoft-365/security/defender/advanced-hunting-device-processevents-table |
 | **Purpose** | Shows which process / command line and which account performed each flip (reg.exe, Set-ItemProperty, auditpol.exe). |
 
 | **Parameter** | **Description** |
 |-----------|-------------|
 | **Name** | DeviceEvents |
-| **Info** |https://learn.microsoft.com/en-us/microsoft-365/security/defender/advanced-hunting-deviceevents-table> |
+| **Info** | https://learn.microsoft.com/en-us/microsoft-365/security/defender/advanced-hunting-deviceevents-table |
 | **Purpose** | High-level security events such as *Audit Policy Change* (4719) that accompany logging or UAC modifications. |
 
 | **Parameter** | **Description** |
 |-----------|-------------|
 | **Name** | DeviceNetworkEvents |
-| **Info** |https://learn.microsoft.com/en-us/microsoft-365/security/defender/advanced-hunting-devicenetworkevents-table>|
+| **Info** | https://learn.microsoft.com/en-us/microsoft-365/security/defender/advanced-hunting-devicenetworkevents-table |
 | **Purpose** | Confirms follow-on network activity: unsigned SMB traffic and WinRM HTTP (5985) sessions after the mis-configs. |
 
 > *If any link 404s, search the table name on Microsoft Learn — URL slugs occasionally change.*
@@ -79,7 +79,16 @@ Query A – Registry changes for any of the ten STIG keys
 DeviceRegistryEvents
 | where Timestamp > ago(24h)
 | where ActionType == "RegistryValueSet" 
-| where RegistryKey has_any ([...])
+| where RegistryKey has_any (
+    @"SOFTWARE\Policies\Microsoft\Windows\PowerShell\Transcription",
+    @"SOFTWARE\Policies\Microsoft\Windows\PowerShell\ScriptBlockLogging",
+    @"SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System",
+    @"SYSTEM\CurrentControlSet\Services\Lanmanworkstation\Parameters",
+    @"SYSTEM\CurrentControlSet\Services\LanmanServer\Parameters",
+    @"SOFTWARE\Policies\Microsoft\Windows\WinRM\Client",
+    @"SOFTWARE\Policies\Microsoft\Windows\WinRM\Service",
+    @"SYSTEM\CurrentControlSet\Control\Lsa\FipsAlgorithmPolicy"
+)
 | project Timestamp, DeviceName, RegistryKey, RegistryValueName, 
          RegistryValueData, InitiatingProcessAccountName,  
          InitiatingProcessFileName  
@@ -109,7 +118,7 @@ Query C – Suspicious network after the flips (WinRM HTTP & unsigned SMB)
 
 ```kusto
 DeviceNetworkEvents
-| where Timestamp > datetime(2025-06-17T18:05Z)
+| where Timestamp > ago(24h)
 | where (RemotePort == 5985 and Protocol == "Tcp")  
    or (LocalPort == 445 and Protocol == "Tcp")
 | project Timestamp, DeviceName, RemoteIP, RemotePort,
@@ -119,6 +128,19 @@ DeviceNetworkEvents
 What to look for:
 WinRM traffic (RemotePort 5985) and SMB sessions with SmbIsSigned = false that begin after the registry flips.
 ```
+
+Query D - Validate all 10 controls modified
+
+```kusto
+DeviceRegistryEvents
+| where Timestamp > ago(24h)
+| where ActionType == "RegistryValueSet"
+| where RegistryKey has_any ([list all 10 paths])
+| summarize ModifiedCount = dcount(RegistryKey) by DeviceName, InitiatingProcessAccountName
+| where ModifiedCount == 10
+```
+
+
 ---
 
 ## Created By:
