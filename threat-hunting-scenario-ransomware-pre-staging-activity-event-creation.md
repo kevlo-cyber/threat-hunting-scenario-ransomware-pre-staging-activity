@@ -78,20 +78,11 @@ Query A – Registry changes for any of the ten STIG keys
 ```kusto
 DeviceRegistryEvents
 | where Timestamp > ago(24h)
-| where RegistryKey has_any (
-        @"\PowerShell\Transcription",
-        @"\PowerShell\ScriptBlockLogging",
-        @"\Policies\System",
-        @"\System\Audit",
-        @"\LanmanWorkstation",
-        @"\LanmanServer",
-        @"\WinRM\Client",
-        @"\WinRM\Service",
-        @"\FipsAlgorithmPolicy"
-)
-| project Timestamp, DeviceName, RegistryKey,
-         RegistryValueName, RegistryValueData,
-         InitiatingProcessFileName, InitiatingProcessAccountUpn
+| where ActionType == "RegistryValueSet" 
+| where RegistryKey has_any ([...])
+| project Timestamp, DeviceName, RegistryKey, RegistryValueName, 
+         RegistryValueData, InitiatingProcessAccountName,  
+         InitiatingProcessFileName  
 | order by Timestamp desc
 
 What to look for:
@@ -118,9 +109,9 @@ Query C – Suspicious network after the flips (WinRM HTTP & unsigned SMB)
 
 ```kusto
 DeviceNetworkEvents
-| where Timestamp > ago(24h)
-| where (RemotePort == 5985 and Protocol == "TCP")      // WinRM over HTTP
-   or (Protocol == "SMB" and SmbIsSigned == false)      // Unsigned SMB traffic
+| where Timestamp > datetime(2025-06-17T18:05Z)
+| where (RemotePort == 5985 and Protocol == "Tcp") 
+   or (LocalPort == 445 and Protocol == "Tcp" and AdditionalFields contains "SmbIsSigned")
 | project Timestamp, DeviceName, RemoteIP, RemotePort,
          InitiatingProcessFileName
 | order by Timestamp desc
