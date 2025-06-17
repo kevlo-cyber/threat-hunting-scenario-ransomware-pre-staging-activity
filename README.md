@@ -1,6 +1,6 @@
 ![image](https://github.com/user-attachments/assets/aae438d1-b51f-4691-b49b-e45fa8b044ad)
 
-# Threat Hunt Report: Crimson Mongoose Ransomware Pre-Staging  
+# Threat Hunt Report: Crimson Mongoose Ransomware Pre-Staging (((DRAFT))) 
 - [Scenario Creation](./threat-hunting-scenario-ransomware-pre-staging-activity-event-creation.md)
 
 ---
