@@ -1,4 +1,4 @@
-# Threat-Hunting Scenario – Crimson Mongoose Ransomware Pre-Staging  
+# Threat-Hunting Scenario – Crimson Mongoose Ransomware Pre-Staging (((DRAFT)))
 _Single-VM · Microsoft Defender for Endpoint Advanced Hunting_
 
 ---
