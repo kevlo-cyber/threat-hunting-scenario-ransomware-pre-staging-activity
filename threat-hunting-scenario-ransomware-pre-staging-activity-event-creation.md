@@ -22,57 +22,79 @@ Your goal: use **Defender for Endpoint Advanced Hunting (KQL)** to prove all ten
 
 ---
 
-## 3. Tables Used to Detect IOCs
+## 3. Tables Used to Detect IoCs
+| **Parameter** | **Description** |
+|-----------|-------------|
+| **Name** | DeviceRegistryEvents |
+| **Info** |https://learn.microsoft.com/en-us/microsoft-365/security/defender/advanced-hunting-deviceregistryevents-table|
+| **Purpose** | Detects every registry-value change (all ten STIG flips appear here). |
 
-| Defender Table | Microsoft Docs Link | Why it’s useful here |
-|----------------|---------------------|----------------------|
-| **RegistryEvents** | <https://learn.microsoft.com/security/defender-endpoint/advanced-hunting-registry-events> | Captures each STIG registry value changed to the bad state. |
-| **ProcessCreationEvents** | <https://learn.microsoft.com/security/defender-endpoint/advanced-hunting-process-events> | Shows `reg.exe`, `Set-ItemProperty`, `auditpol.exe` commands that performed the flips and the initiating account. |
-| **DeviceNetworkEvents** | <https://learn.microsoft.com/security/defender-endpoint/advanced-hunting-network-events> | Lets you spot outbound SMB without signing and WinRM HTTP 5985 sessions—supporting indicators. |
+| **Parameter** | **Description** |
+|-----------|-------------|
+| **Name** | DeviceProcessEvents |
+| **Info** |https://learn.microsoft.com/en-us/microsoft-365/security/defender/advanced-hunting-device-processevents-table>|
+| **Purpose** | Shows which process / command line and which account performed each flip (reg.exe, Set-ItemProperty, auditpol.exe). |
 
----
+| **Parameter** | **Description** |
+|-----------|-------------|
+| **Name** | DeviceEvents |
+| **Info** |https://learn.microsoft.com/en-us/microsoft-365/security/defender/advanced-hunting-deviceevents-table> |
+| **Purpose** | High-level security events such as *Audit Policy Change* (4719) that accompany logging or UAC modifications. |
 
-## 4. Related Queries (run in **security.microsoft.com → Hunting → Advanced Hunting**)
+| **Parameter** | **Description** |
+|-----------|-------------|
+| **Name** | DeviceNetworkEvents |
+| **Info** |https://learn.microsoft.com/en-us/microsoft-365/security/defender/advanced-hunting-devicenetworkevents-table>|
+| **Purpose** | Confirms follow-on network activity: unsigned SMB traffic and WinRM HTTP (5985) sessions after the mis-configs. |
 
-<details>
-<summary>Query A – Registry flips (all ten controls)</summary>
+> *If any link 404s, search the table name on Microsoft Learn — URL slugs occasionally change.*
+
+
+## 4. Related Queries
 
 ```kusto
-let badValues = dynamic([
-  // PowerShell logging
-  @"EnableTranscripting=0", @"EnableScriptBlockLogging=0",
-  // UAC / Admin Approval
-  @"FilterAdministratorToken=0", @"ConsentPromptBehaviorAdmin=0",
-  // Audit
-  @"Process Creation|success:disable",
-  // SMB signing
-  @"LanmanWorkstation|RequireSecuritySignature=0",
-  @"LanmanServer|RequireSecuritySignature=0",
-  // WinRM
-  @"AllowDigest=1", @"AllowUnencryptedTraffic=1",
-  // FIPS
-  @"FipsAlgorithmPolicy|Enabled=0"
-]);
-RegistryEvents
+// A. Confirm ALL 10 STIG flips on the device
+let bad =
+datatable(KeyValue:string, BadData:string)
+[
+  @"\PowerShell\Transcription|EnableTranscripting",            "0",
+  @"\PowerShell\ScriptBlockLogging|EnableScriptBlockLogging",  "0",
+  @"\Policies\System|FilterAdministratorToken",                "0",
+  @"\Policies\System|ConsentPromptBehaviorAdmin",              "0",
+  @"\System\Audit|ProcessCreationIncludeCmdLine_Enabled",      "0",
+  @"\LanmanWorkstation|RequireSecuritySignature",              "0",
+  @"\LanmanServer|RequireSecuritySignature",                   "0",
+  @"\WinRM\Client|AllowDigest",                                "1",
+  @"\WinRM\Client|AllowUnencryptedTraffic",                    "1",
+  @"\WinRM\Service|AllowUnencryptedTraffic",                   "1",
+  @"\Lsa\FipsAlgorithmPolicy|Enabled",                         "0"
+];
+DeviceRegistryEvents
 | where Timestamp > ago(24h)
-| extend IOC = strcat(RegistryKey,"|",RegistryValueName,"=",RegistryValueData)
-| where IOC in (badValues)
-| summarize flips = make_set(IOC) by DeviceName, InitiatingProcessAccountUpn
-| where array_length(flips) == 10   // all ten present
-```
-</details> <details> <summary>Query B – Processes that changed the keys</summary>
-ProcessCreationEvents
+| extend KV = strcat(RegistryKey,"|",RegistryValueName)
+| join kind=inner bad on $left.KV==$right.KeyValue
+| where RegistryValueData == BadData
+| summarize flips = make_set(KV) by DeviceName, InitiatingProcessAccountUpn, earliest=min(Timestamp)
+| where array_length(flips) == 10      // ⇐ all ten present
+| project earliest, DeviceName, InitiatingProcessAccountUpn, flips
+
+// B. Processes / accounts that made the changes
+DeviceProcessEvents
 | where Timestamp > ago(24h)
-| where ProcessCommandLine has_any ("reg add", "Set-ItemProperty", "auditpol")
+| where ProcessCommandLine has_any ("reg add","Set-ItemProperty","auditpol")
 | project Timestamp, DeviceName, InitiatingProcessAccountUpn,
          FileName, ProcessCommandLine
-</details> <details> <summary>Query C – Unsigned SMB & WinRM HTTP traffic</summary>
+| order by Timestamp desc
+
+// C. Supporting network indicators (WinRM HTTP & unsigned SMB)
 DeviceNetworkEvents
 | where Timestamp > ago(24h)
-| where (RemotePort == 5985 and Protocol == "TCP")  // WinRM HTTP
-   or (Protocol == "SMB" and SmbIsSigned == false) // unsigned SMB
-| project Timestamp, DeviceName, RemoteIP, RemotePort, ReportId
-</details>
+| where (RemotePort == 5985 and Protocol == "TCP")          // WinRM over HTTP
+   or (Protocol == "SMB" and SmbIsSigned == false)          // Unsigned SMB
+| project Timestamp, DeviceName, RemoteIP, RemotePort, Protocol, ActionType
+```
+
+
 5. Created By
 Kevin Lopez
 
