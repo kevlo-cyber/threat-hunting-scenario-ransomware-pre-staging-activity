@@ -82,7 +82,7 @@ Hunted for unsigned SMB and WinRM HTTP (5985):
 DeviceNetworkEvents
 | where Timestamp > datetime(2025-06-17T18:05Z)
 | where (RemotePort == 5985 and Protocol == "Tcp")  
-   or (LocalPort == 445 and Protocol == "Tcp" and AdditionalFields contains "SmbIsSigned")
+   or (LocalPort == 445 and Protocol == "Tcp")
 | project Timestamp, RemoteIP, RemotePort, InitiatingProcessFileName
 | order by Timestamp desc
 ```
