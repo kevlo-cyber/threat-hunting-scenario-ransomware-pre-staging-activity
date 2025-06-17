@@ -53,7 +53,7 @@ Findings: All ten non-compliant values appeared between 2025-06-17 18:03–18:05
 
 ##
 
-### 2. Checked DeviceProcessEvents for who made the changes
+### 2. Checked `DeviceProcessEvents` for who made the changes
 Focused on commands containing reg add, Set-ItemProperty, or auditpol.
 Query:
 
@@ -75,8 +75,8 @@ This matches attacker TTP: pull-and-run script from GitHub, window hidden.
 
 ##
 
-### 3. Searched DeviceNetworkEvents for supporting traffic
-Hunted for unsigned SMB and WinRM HTTP (5985).
+### 3. Searched `DeviceNetworkEvents` for supporting traffic
+Hunted for unsigned SMB and WinRM HTTP (5985):
 
 ```kql
 DeviceNetworkEvents
@@ -87,16 +87,39 @@ DeviceNetworkEvents
 | order by Timestamp desc
 ```
 
-Findings:
-Immediately after registry flips, the host initiated WinRM HTTP to 10.0.0.15 (internal admin box). No SMB signing packets yet, but early WinRM use confirms staging.
+### 4. Validation - Confirmed All 10 STIG Controls Modified
+Validated that all 10 controls were modified by same account:
+```kql
+DeviceRegistryEvents
+| where Timestamp between (datetime(2025-06-17T18:00Z) .. datetime(2025-06-17T18:10Z))
+| where ActionType == "RegistryValueSet"
+| where RegistryKey has_any ([list of 10 specific paths])
+| summarize 
+    ModifiedControls = dcount(RegistryKey),
+    ControlsList = make_set(RegistryKey),
+    UniqueAccounts = dcount(InitiatingProcessAccountName)
+  by DeviceName
+| where ModifiedControls == 10
+```
+Findings: Confirmed all 10 STIG controls were modified by single account (corp\backupsvc) within 2-minute window.
 
-Chronological Event Timeline
+---
+
+### Chronological Event Timeline
 
 | Time (UTC) | Event |
 |-------|-----------|
-|18:03:12|	powershell.exe (hidden) downloaded and executed stig-pre-staging-iocs.ps1.|
-|18:03:14–18:05:09|	All ten registry values flipped to non-compliant (DeviceRegistryEvents).|
-|18:05:22|	First WinRM HTTP connection to 10.0.0.15:5985 by powershell.exe.|
+|18:03:12|powershell.exe (hidden) downloaded and executed stig-pre-staging-iocs.ps1.|
+|18:03:14–18:05:09|All ten registry values flipped to non-compliant (DeviceRegistryEvents).|
+|18:05:22|First WinRM HTTP connection to 10.0.0.15:5985 by powershell.exe.|
+
+| IOC (Type) | Value | Confidence | MITRE ATT&CK
+|-------|-----------|-------|-----------|
+| Compromised Account | powershell.exe (hidden) downloaded and executed stig-pre-staging-iocs.ps1. | High | T1078
+| Malicious Process | All ten registry values flipped to non-compliant (DeviceRegistryEvents). | High | T1059.001
+| C2 Server | First WinRM HTTP connection to 10.0.0.15:5985 by powershell.exe. | Medium | T1021.006
+| Malicious Script | stig-pre-staging-iocs.ps1 | High | T1203
+| Registry Modifications | 10 STIG controls disabled | High | T1112
 
 ---
 
@@ -107,7 +130,11 @@ This matches pre-staging behavior; ransomware detonation would likely follow wit
 ---
 
 ### Response Taken
-MDE action “Isolate device” executed.
+Immediate Actions:
+
+- Isolated device via MDE
+- Disabled corp\backupsvc account
+- Initiated enterprise-wide hunt for similar activity
 
 ---
 
