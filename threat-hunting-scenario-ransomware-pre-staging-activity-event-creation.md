@@ -1,150 +1,93 @@
-# LogN Pacific – Crimson Mongoose Ransomware Pre-Staging Hunt  
-_Single-VM exercise for the Josh Madakor Cyber Range – **Defender-only hunting**_
+# Threat-Hunting Scenario – Crimson Mongoose Ransomware Pre-Staging  
+_Single-VM · Microsoft Defender for Endpoint Advanced Hunting_
 
 ---
 
-## Background Story – LogN Pacific vs. “Crimson Mongoose”
-
-LogN Pacific keeps 42 ports humming across the Asia-Pacific region.  
-Yesterday the CISO received a CERT flash: a new ransomware crew nick-named **“Crimson Mongoose”** is actively breaching logistics firms just like LogN Pacific.
-
-### What investigators know so far
-
-| Stage | Details |
-|-------|---------|
-| **Initial access** | Highly tailored spear-phish to high-privilege users (domain admins, SCCM operators, Azure AD Global Admins). |
-| **Immediate action** | Within minutes of foothold the intruders flip **_exactly ten_ Windows 10 STIG settings** from compliant to non-compliant. |
-| **Dwell time** | They lie low for **up to 24 hours**, monitoring Defender noise to stay invisible. |
-| **Impact** | A custom Go-based encryptor detonates after the 24-hour mark, crippling operations and demanding an eight-figure ransom. |
-
-These ten STIG mis-configurations all **erase visibility or weaken host defenses**, PowerShell logging, UAC hardening, SMB & WinRM security, FIPS crypto, and more. In every confirmed Crimson Mongoose incident the same ten flips appeared, no more, no less, making them the most reliable early-warning indicator.
-
-### Your threat-hunting mission
-
-> **Use Microsoft Defender for Endpoint Advanced Hunting to detect _all ten_ STIG flips on the single Windows 10 victim VM, tie them to the same privileged account, and escalate before the 24-hour fuse burns down.**
-
-Catch the mis-configurations in time and LogN Pacific’s cargo keeps moving; miss them and Crimson Mongoose will lock every manifest and invoice behind an eight-figure ransom demand.
+## 1. Intro
+LogN Pacific has been alerted to a new ransomware crew, **“Crimson Mongoose,”** that quietly breaches logistics companies.  
+Their confirmed trade-mark: **exactly ten Windows 10 STIG settings are flipped to non-compliant minutes after initial foothold**, then the actors lie low for ≤ 24 hours before detonation.  
+Your goal: use **Defender for Endpoint Advanced Hunting (KQL)** to prove all ten flips occurred on the victim VM, link them to the same privileged account and escalate **before hour 24**.
 
 ---
 
-## 2 Tools in Scope
+## 2. Steps the Bad Actor Took
 
-| Tool | Role in this exercise |
-|------|-----------------------|
-| **Microsoft Defender for Endpoint** | **Only hunting console** (Advanced Hunting queries, timeline, isolation). |
-| **Tenable** | *Instructor-only* baseline check (not used by learner). |
-| **Azure VM** | Single Windows 10 **victim host** running the MDE sensor. |
+| Step | Action (attacker script) | Resulting IOC |
+|------|-------------------------|---------------|
+| 1 | Runs `stig-pre-staging-iocs.ps1` as a privileged account | Flips ten STIG controls (logging, UAC, SMB, WinRM, FIPS). |
+| 2 | Monitors Defender noise (< 24 h) | Minimal activity (`whoami`, PowerShell heartbeat). |
+| 3 | _(Hypothetical)_ Drops encryptor & schedules task at hour 23-24 | **Not executed** in lab—exercise ends once flips are confirmed. |
 
----
-
-## 3 Lab Topology
-
-Internet Phish → Victim Win10 VM (Azure)
-▲ Defender for Endpoint sensor
-Hunter (browser) ────┘ security.microsoft.com (Advanced Hunting)
-
+> *Incident response is triggered **only after all ten flips are verified**.*
 
 ---
 
-## 4 Lab Setup (Instructor)
+## 3. Tables Used to Detect IOCs
 
-```powershell
-# 1. Restore STIG compliance (baseline)
-iwr "https://raw.githubusercontent.com/kevlo-cyber/threat-hunting-scenario-ransomware-pre-staging-activity/main/scripts/stig-remediation.ps1" -OutFile "$env:TMP\stig-remediation.ps1"
-powershell -ExecutionPolicy Bypass -File "$env:TMP\stig-remediation.ps1"
+| Defender Table | Microsoft Docs Link | Why it’s useful here |
+|----------------|---------------------|----------------------|
+| **RegistryEvents** | <https://learn.microsoft.com/security/defender-endpoint/advanced-hunting-registry-events> | Captures each STIG registry value changed to the bad state. |
+| **ProcessCreationEvents** | <https://learn.microsoft.com/security/defender-endpoint/advanced-hunting-process-events> | Shows `reg.exe`, `Set-ItemProperty`, `auditpol.exe` commands that performed the flips and the initiating account. |
+| **DeviceNetworkEvents** | <https://learn.microsoft.com/security/defender-endpoint/advanced-hunting-network-events> | Lets you spot outbound SMB without signing and WinRM HTTP 5985 sessions—supporting indicators. |
 
-# (Instructor may verify with Tenable scan here.)
+---
 
-```
+## 4. Related Queries (run in **security.microsoft.com → Hunting → Advanced Hunting**)
 
-Learners begin after this baseline is set.
+<details>
+<summary>Query A – Registry flips (all ten controls)</summary>
 
-## 5 Inject the IOCs (Attacker script)
-
-iwr "https://raw.githubusercontent.com/kevlo-cyber/threat-hunting-scenario-ransomware-pre-staging-activity/main/scripts/stig-pre-staging-iocs.ps1" -OutFile "$env:TMP\stig-pre-staging-iocs.ps1"
-powershell -ExecutionPolicy Bypass -File "$env:TMP\stig-pre-staging-iocs.ps1"
-
-That flips these ten STIG controls:
-
-#	Mis-configuration	STIG ID
-1	PS transcription OFF	WN10-CC-000327
-2	Script-block logging OFF	WN10-CC-000326
-3	Admin Approval Mode OFF	WN10-SO-000245
-4	Secure-desktop UAC prompt OFF	WN10-SO-000250
-5	Process-Creation success auditing OFF	WN10-AU-000050
-6	SMB client signing OFF	WN10-SO-000100
-7	SMB server signing OFF	WN10-SO-000120
-8	WinRM Digest auth ON	WN10-CC-000360
-9	WinRM unencrypted traffic ON	WN10-CC-000335
-10	FIPS mode OFF	WN10-SO-000230
-
-## 6 Adversary Timeline (context)
-(Rows after Hour 0 are hypothetical encryption will not run in this lab.)
-
-Hour	Action	MDE telemetry
-0	Runs mis-config script.	ProcessCreationEvents for reg.exe / auditpol.exe / powershell.exe
-RegistryEvents with the ten key paths.
-1-23	Quiet recon.	Occasional whoami, Defender device heartbeat.
-23	Drops encryptor.	New file in %PROGRAMDATA%, ProcessCreationEvents.
-23.5	Deletes shadow copies.	ProcessCreationEvents vssadmin.exe.
-24	Schedules encryptor.	Task scheduler events (not executed here).
-
-IR is triggered only after all ten STIG flips are verified.
-
-## 7 Hunting Tasks (Defender Advanced Hunting)
-
-1. Find the registry flips
-
+```kusto
+let badValues = dynamic([
+  // PowerShell logging
+  @"EnableTranscripting=0", @"EnableScriptBlockLogging=0",
+  // UAC / Admin Approval
+  @"FilterAdministratorToken=0", @"ConsentPromptBehaviorAdmin=0",
+  // Audit
+  @"Process Creation|success:disable",
+  // SMB signing
+  @"LanmanWorkstation|RequireSecuritySignature=0",
+  @"LanmanServer|RequireSecuritySignature=0",
+  // WinRM
+  @"AllowDigest=1", @"AllowUnencryptedTraffic=1",
+  // FIPS
+  @"FipsAlgorithmPolicy|Enabled=0"
+]);
 RegistryEvents
 | where Timestamp > ago(24h)
-| where (
-    RegistryKey has @"\PowerShell\Transcription" and RegistryValueName == "EnableTranscripting" and RegistryValueData == "0"
-    or RegistryKey has @"\PowerShell\ScriptBlockLogging" and RegistryValueData == "0"
-    or RegistryKey has @"\FipsAlgorithmPolicy" and RegistryValueData == "0"
-    or RegistryKey has @"\WinRM\Client"     and RegistryValueName == "AllowDigest"
-    or RegistryKey has @"\WinRM\Client"     and RegistryValueName == "AllowUnencryptedTraffic"
-    or RegistryKey has @"\WinRM\Service"    and RegistryValueName == "AllowUnencryptedTraffic"
-    or RegistryKey has @"\LanmanWorkstation" and RegistryValueName == "RequireSecuritySignature" and RegistryValueData == "0"
-    or RegistryKey has @"\LanmanServer"      and RegistryValueName == "RequireSecuritySignature" and RegistryValueData == "0"
-    or RegistryKey has @"\Policies\System"   and RegistryValueName in ("FilterAdministratorToken","ConsentPromptBehaviorAdmin")
-  )
-
-2. Correlate to the modifying process & account
-
+| extend IOC = strcat(RegistryKey,"|",RegistryValueName,"=",RegistryValueData)
+| where IOC in (badValues)
+| summarize flips = make_set(IOC) by DeviceName, InitiatingProcessAccountUpn
+| where array_length(flips) == 10   // all ten present
+```
+</details> <details> <summary>Query B – Processes that changed the keys</summary>
+ProcessCreationEvents
+| where Timestamp > ago(24h)
+| where ProcessCommandLine has_any ("reg add", "Set-ItemProperty", "auditpol")
+| project Timestamp, DeviceName, InitiatingProcessAccountUpn,
+         FileName, ProcessCommandLine
+</details> <details> <summary>Query C – Unsigned SMB & WinRM HTTP traffic</summary>
 DeviceNetworkEvents
 | where Timestamp > ago(24h)
-| where RemotePort == 5985 and Protocol == "TCP"   // WinRM HTTP
-  or (Protocol == "SMB" and SmbIsSigned == false)  // Unsigned SMB
+| where (RemotePort == 5985 and Protocol == "TCP")  // WinRM HTTP
+   or (Protocol == "SMB" and SmbIsSigned == false) // unsigned SMB
+| project Timestamp, DeviceName, RemoteIP, RemotePort, ReportId
+</details>
+5. Created By
+Kevin Lopez
 
-3. Network clues – Defender network sensor:
+6. Validated By
+(leave blank for now)
 
-DeviceNetworkEvents
-| where Timestamp > ago(24h)
-| where RemotePort == 5985 and Protocol == "TCP"   // WinRM HTTP
-  or (Protocol == "SMB" and SmbIsSigned == false)  // Unsigned SMB
+7. Additional Notes
+Learners must confirm all ten flips before declaring an incident.
 
-4. Validate that all ten controls are flipped; only then escalate.
+Encryption phase is hypothetical and will not run in the lab.
 
-## 8 Success Criteria
-Tier	Requirement
-Bronze	Use MDE queries to list all ten non-compliant settings.
-Silver	Show the exact privileged account & timestamp for each flip.
-Gold	Create an MDE custom detection rule that fires after all ten flips (AND logic).
-Platinum	Use Defender to isolate the VM or disable the compromised account before hour 24.
+A single Windows 10 VM is used; no domain controller or mail telemetry available.
 
-## 9 Cleanup
-The VM will be deleted after the exercise, so remediation is optional.
-(Optional) rerun stig-remediation.ps1 for practice.
+8. Revision History
+Date	Version	Notes
+2025-06-17	1.0	Initial scenario (Crimson Mongoose STIG flips).
 
-## 10 References
-DISA Windows 10 STIG v2r9
 
-MITRE ATT&CK v14
-
-Defender for Endpoint Advanced Hunting docs
-
-Josh Madakor Cyber Range – https://joshmadakor.tech/cyber/
-
-Kevin Lopez – LinkedIn · GitHub
-
-“Validate every flip, correlate every account, then pull the isolation trigger before the fuse burns down.”
