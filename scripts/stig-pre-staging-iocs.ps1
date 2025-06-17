@@ -1,17 +1,29 @@
 <#
-Purpose : Force **10** Windows 10 STIG controls into a non-compliant state for attacker pre-staging simulation
-Controls: WN10-CC-000327, WN10-CC-000326, WN10-SO-000245, WN10-SO-000250, WN10-AU-000050,
-          WN10-SO-000100, WN10-SO-000120, WN10-CC-000360, WN10-CC-000335, WN10-SO-000230
+Purpose : Force **10** Windows 10 STIG controls into a non-compliant state
+          for attacker pre-staging simulation.
+Controls: WN10-CC-000327  (PowerShell Transcription)
+          WN10-CC-000326  (PowerShell Script-Block Logging)
+          WN10-SO-000245  (Admin Approval Mode for built-in Administrator)
+          WN10-SO-000250  (Secure-desktop elevation prompt)
+          WN10-AU-000050  (Audit Process Creation successes)
+          WN10-SO-000100  (SMB client signing)
+          WN10-SO-000120  (SMB server signing)
+          WN10-CC-000360  (WinRM Digest authentication)
+          WN10-CC-000335  (Unencrypted WinRM traffic)
+          WN10-SO-000230  (FIPS mode)
 Silent run; auto-reboots when finished.
 #>
 
-# Abort if not running as Administrator-equivalent
-if (-not ([Security.Principal.WindowsPrincipal]
-          [Security.Principal.WindowsIdentity]::GetCurrent()
-         ).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) { exit 1 }
+# Abort if not running as Administrator
+if (-not ([Security.Principal.WindowsPrincipal]::new(
+            [Security.Principal.WindowsIdentity]::GetCurrent()
+          ).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator))) {
+    Write-Warning "Script must be run from an elevated PowerShell session."
+    exit 1
+}
 
-$ErrorActionPreference  = 'SilentlyContinue'
-$ProgressPreference     = 'SilentlyContinue'
+$ErrorActionPreference = 'SilentlyContinue'
+$ProgressPreference    = 'SilentlyContinue'
 
 function EP ($p) { if (-not (Test-Path $p)) { New-Item -Path $p -Force | Out-Null } }
 
