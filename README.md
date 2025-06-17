@@ -43,7 +43,16 @@ Simple sweep for any key containing the PowerShell, WinRM, SMB, FIPS, or UAC pat
 DeviceRegistryEvents
 | where Timestamp > ago(24h)
 | where ActionType == "RegistryValueSet"  
-| where RegistryKey has_any ([...])
+| where RegistryKey has_any (
+    @"SOFTWARE\Policies\Microsoft\Windows\PowerShell\Transcription",
+    @"SOFTWARE\Policies\Microsoft\Windows\PowerShell\ScriptBlockLogging",
+    @"SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System",
+    @"SYSTEM\CurrentControlSet\Services\Lanmanworkstation\Parameters",
+    @"SYSTEM\CurrentControlSet\Services\LanmanServer\Parameters",
+    @"SOFTWARE\Policies\Microsoft\Windows\WinRM\Client",
+    @"SOFTWARE\Policies\Microsoft\Windows\WinRM\Service",
+    @"SYSTEM\CurrentControlSet\Control\Lsa\FipsAlgorithmPolicy"
+)
 | project Timestamp, DeviceName, RegistryKey, RegistryValueName, 
          RegistryValueData, InitiatingProcessAccountName,  
          InitiatingProcessFileName
