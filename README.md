@@ -46,7 +46,8 @@ DeviceRegistryEvents
 | where RegistryKey has_any ([...])
 | project Timestamp, DeviceName, RegistryKey, RegistryValueName, 
          RegistryValueData, InitiatingProcessAccountName,  
-         InitiatingProcessFileName  
+         InitiatingProcessFileName
+| order by Timestamp desc
 ```
 Findings: All ten non-compliant values appeared between 2025-06-17 18:03–18:05 UTC.
 
@@ -61,6 +62,7 @@ DeviceProcessEvents
 | where Timestamp between (datetime(2025-06-17T18:00Z) .. datetime(2025-06-17T18:10Z))
 | where ProcessCommandLine has_any ("reg add","Set-ItemProperty","auditpol")
 | project Timestamp, FileName, ProcessCommandLine, InitiatingProcessAccountUpn
+| order by Timestamp desc
 ```
 
 Findings:
@@ -82,6 +84,7 @@ DeviceNetworkEvents
 | where (RemotePort == 5985 and Protocol == "Tcp")  
    or (LocalPort == 445 and Protocol == "Tcp" and AdditionalFields contains "SmbIsSigned")
 | project Timestamp, RemoteIP, RemotePort, InitiatingProcessFileName
+| order by Timestamp desc
 ```
 
 Findings:
