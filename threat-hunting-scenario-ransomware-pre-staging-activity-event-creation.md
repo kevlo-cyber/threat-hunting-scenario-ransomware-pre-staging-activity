@@ -83,6 +83,7 @@ DeviceRegistryEvents
 | project Timestamp, DeviceName, RegistryKey, RegistryValueName, 
          RegistryValueData, InitiatingProcessAccountName,  
          InitiatingProcessFileName  
+| order by Timestamp desc
 
 What to look for:
 EnableTranscripting = 0, EnableScriptBlockLogging = 0, FilterAdministratorToken = 0, etc.
