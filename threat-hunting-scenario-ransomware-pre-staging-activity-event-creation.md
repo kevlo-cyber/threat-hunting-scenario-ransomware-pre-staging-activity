@@ -20,6 +20,22 @@ Your goal: use **Defender for Endpoint Advanced Hunting (KQL)** to prove all ten
 
 > *Incident response is triggered **only after all ten flips are verified**.*
 
+### STIG Controls Disabled by Crimson Mongoose
+
+| STIG ID | Control / Setting | Why it aids pre-staging for ransomware |
+|---------|-------------------|----------------------------------------|
+| **WN10-CC-000327** | PowerShell Transcription Logging | Hides plain-text PowerShell commands used to download, stage, or launch payloads. |
+| **WN10-CC-000326** | PowerShell Script-Block Logging | Removes decoded script-block telemetry that would reveal obfuscated malware logic. |
+| **WN10-SO-000245** | Admin Approval Mode (built-in Administrator) | Grants full admin rights with **no UAC prompt**, streamlining silent privilege escalation. |
+| **WN10-SO-000250** | Secure-desktop UAC prompt | Elevation prompts appear on user desktop instead of isolating screen → easier to spoof or auto-dismiss. |
+| **WN10-AU-000050** | Audit → Process-Creation (success) | Kills Event ID 4688 success records, erasing forensic traces of loader and encryption processes. |
+| **WN10-SO-000100** | SMB **client** signing | Lets malware connect to remote shares without integrity checks → faster lateral payload copy. |
+| **WN10-SO-000120** | SMB **server** signing | Accepts unsigned inbound sessions → attacker can push tools to host or exfiltrate files invisibly. |
+| **WN10-CC-000360** | WinRM Digest Authentication | Enables weaker auth so stolen hashes or sprayed passwords work for remote PowerShell. |
+| **WN10-CC-000335** | WinRM Unencrypted Traffic | Allows remote PowerShell over HTTP 5985 (clear-text) to avoid TLS setup and speed automation. |
+| **WN10-SO-000230** | FIPS-compliant algorithms | Disables strong crypto; ransomware can use faster or custom encryption routines without failure. |
+
+
 ---
 
 ## 3. Tables Used to Detect IoCs
